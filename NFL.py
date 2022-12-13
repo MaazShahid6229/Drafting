@@ -40,9 +40,10 @@ logging.info(f"Operation Start at {current_time}")
 
 # Constant
 H = 2
+G = 2
 
-# PASSING_PROPS_HEADERS = ["Game", "Player", "DK Non SGP (o)", "DK Non SGP (o) Line", "DK SGP (o)", "DK SGP (o) Line"
-#                          , "Diff (E3-C3)", "Line Diff"]
+NFL_GAME_HEADERS = ["Game", "DK Home SGP ML", "DK Home non sgp ML", "Difference"]
+NFL_GAME_DATA = []
 
 PASSING_PROPS_HEADERS = ["Game", "Player", "DK Non SGP (o)", "DK Non SGP (o) Line", "DK SGP (o)", "DK SGP (o) Line"]
 PASSING_PROPS_DATA = []
@@ -110,6 +111,7 @@ def sgp_bet_values(header, label):
 # SGP Call
 def sgp_call(link, driver):
     sgp_dict = {
+        "Game": {},
         "Passing Props": {},
         "Rushing Props": {}
     }
@@ -118,6 +120,22 @@ def sgp_call(link, driver):
         driver.get(link)
         driver.implicitly_wait(10)
         time.sleep(5)
+        # Game
+        try:
+            driver.find_element(By.XPATH, "//button[text()='Game Lines']").click()
+            header_elements = driver.find_elements(By.CLASS_NAME,  "rj-market-collapsible")
+            for header in header_elements:
+                header_name = header.find_element(By.CLASS_NAME, "rj-market__header").text
+                if header_name == "Game":
+                    i = 3
+                    player_names = header.find_elements(By.XPATH, "//p[contains(@class, 'rj-market__label--row')]")
+                    for player_name in player_names:
+                        sgp_dict["Game"][player_name.text] = driver.find_element(By.XPATH, f"/html/body/div[2]/div[2]/section/section[2]/section/section/div[2]/sb-comp/div/div/div[2]/sb-lazy-render/div/div[1]/div/div/div/button[{i}]/span[2]").text
+                        i = i+3
+        except Exception as e:
+            print("No GAME SGP Available for this game")
+            logging.info(f"No Passing Props SGP Available for this game for Error: {e}")
+        # Passing Props
         try:
             driver.find_element(By.XPATH, "//button[text()='Passing Props']").click()
             header_elements = driver.find_elements(By.CLASS_NAME,  "rj-market-collapsible")
@@ -129,6 +147,7 @@ def sgp_call(link, driver):
             print("No Passing Props SGP Available for this game")
             logging.info(f"No Passing Props SGP Available for this game for Error: {e}")
 
+        # Rushing Props
         try:
             driver.find_element(By.XPATH, "//button[text()='Rushing Props']").click()
             header_elements = driver.find_elements(By.CLASS_NAME,  "rj-market-collapsible")
@@ -149,9 +168,24 @@ def sgp_call(link, driver):
 # Non SGP Call
 def non_sgp_call(link, driver):
     non_sgp_dict = {
+        "Game": {},
         "Passing Props": {},
         "Rushing Props": {}
     }
+    # Game
+    try:
+        game_link = link.replace("sgpmode=true", "category=odds&subcategory=game-lines")
+        driver.get(game_link)
+        driver.implicitly_wait(10)
+        player_names = driver.find_elements(By.CLASS_NAME, "event-cell__name-text")
+        i = 1
+        for player_name in player_names:
+            non_sgp_dict["Game"][player_name.text] = driver.find_element(By.XPATH, f"/html/body/div[2]/div[2]/section/section[2]/section/section/div[2]/div[2]/div[1]/div[2]/div[1]/div/table/tbody/tr[{i}]/td[3]/div/div/div/div/div[2]/span").text
+            i = i + 1
+    except Exception as e:
+        print("No GAME Non SGP Available for this game")
+        logging.info(f"No GAME Non SGP Available for this game, Error is: {e}")
+
     # Passing Props
     try:
         pp_link = link.replace("sgpmode=true", "category=odds&subcategory=passing-props")
@@ -212,6 +246,23 @@ def get_match_links(game_link, driver):
     match_links = driver.find_elements(By.CLASS_NAME, "toggle-sgp-badge__nav-link")
     match_links_list = [x.get_attribute("href") for x in match_links]
     return unique_list(match_links_list)
+
+
+def NFL_GAME(sgp, non_sgp, link):
+    global G
+    for s in sgp.items():
+        lis = []
+        try:
+            ml_non_sgp = non_sgp[s[0]]
+            game_name = link
+            lis.append(game_name)
+            lis.append(s[1])
+            lis.append(ml_non_sgp)
+            lis.append(f"=SIGN(B{G} - C{G}) * MOD(ABS(B{G} - C{G}), 100)")
+            NFL_GAME_DATA .append(lis)
+            G = G + 1
+        except Exception as e:
+            continue
 
 
 def passing_props(sgp, non_sgp, game_name):
@@ -292,6 +343,7 @@ def write_excel_sheet():
     end_time = datetime.now()
     final_time = end_time.strftime("%H:%M:%S")
 
+    df_game = pd.DataFrame(NFL_GAME_DATA, columns=NFL_GAME_HEADERS)
     df_passing_props = pd.DataFrame(PASSING_PROPS_DATA, columns=PASSING_PROPS_HEADERS)
     df_rushing_props = pd.DataFrame(RUSHING_PROPS_DATA, columns=RUSHING_PROPS_HEADERS)
 
@@ -302,18 +354,27 @@ def write_excel_sheet():
     # Setting sheets
     sheet1 = WB[0]
     sheet2 = WB[1]
+    sheet3 = WB[2]
 
     sheet1.clear()
     sheet2.clear()
+    sheet3.clear()
 
-    sheet1.set_dataframe(df_passing_props, (1, 1))
-    sheet2.set_dataframe(df_rushing_props, (1, 1))
+    sheet1.set_dataframe(df_game, (1, 1))
+    sheet2.set_dataframe(df_passing_props, (1, 1))
+    sheet3.set_dataframe(df_rushing_props, (1, 1))
 
     sheet1.update_value('G1', "Last Update")
     sheet1.update_value('H1', final_time)
 
     sheet2.update_value('G1', "Last Update")
     sheet2.update_value('H1', final_time)
+
+    sheet3.update_value('G1', "Last Update")
+    sheet3.update_value('H1', final_time)
+
+    logging.info(f"There are: {len(NFL_GAME_DATA)} Game ML Data ")
+    print(f"There are: {len(NFL_GAME_DATA)} Game ML Data")
 
     logging.info(f"There are: {len(PASSING_PROPS_DATA)} Passing Props Data ")
     print(f"There are: {len(PASSING_PROPS_DATA)} Passing Props Data")
@@ -337,7 +398,7 @@ def NFL_CALL():
         try:
             nfl_url = "https://sportsbook.draftkings.com/leagues/football/nfl"
             links = get_match_links(nfl_url, driver)
-            # links = ["https://sportsbook.draftkings.com/event/was-commanders-%40-chi-bears/26844154?sgpmode=true"]
+            # links = [" https://sportsbook.draftkings.com/event/la-rams-%40-kc-chiefs/26843976?sgpmode=true"]
             logging.info(f"Get {len(links)} links on page")
             print(f"Get {len(links)} links on page")
         except Exception as e:
@@ -350,13 +411,17 @@ def NFL_CALL():
                 print(f"Start getting values form: {link}")
                 sgp_dict = sgp_call(link, driver)
                 non_sgp_dict = non_sgp_call(link, driver)
-                print(non_sgp_dict)
-                print(sgp_dict)
+                print("Non SGP", non_sgp_dict)
+                print("SGP", sgp_dict)
+                game_name = link_to_name(link)
+                if sgp_dict["Game"] != {} and non_sgp_dict["Game"] != {}:
+                    NFL_GAME(sgp_dict["Game"], non_sgp_dict["Game"], game_name)
+
                 if sgp_dict["Passing Props"] != {} and non_sgp_dict["Passing Props"] != {}:
-                    passing_props(sgp_dict["Passing Props"], non_sgp_dict["Passing Props"], link_to_name(link))
+                    passing_props(sgp_dict["Passing Props"], non_sgp_dict["Passing Props"], game_name)
 
                 if sgp_dict["Rushing Props"] != {} and non_sgp_dict["Rushing Props"] != {}:
-                    rushing_props(sgp_dict["Rushing Props"], non_sgp_dict["Rushing Props"], link_to_name(link))
+                    rushing_props(sgp_dict["Rushing Props"], non_sgp_dict["Rushing Props"], game_name)
 
             except Exception as e:
                 logging.info(f"Error on getting values for link {link}")
@@ -376,12 +441,17 @@ def main():
 
         global PASSING_PROPS_DATA
         global RUSHING_PROPS_DATA
+        global NFL_GAME_DATA
 
         PASSING_PROPS_DATA = []
         RUSHING_PROPS_DATA = []
+        NFL_GAME_DATA = []
 
         global H
+        global G
+
         H = 2
+        G = 2
 
         print("\n \n ---------Waiting For the Next Call 20 Minutes Delay-------\n \n")
         logging.info("\n \n \n---------Waiting For the Next Call 20 Minutes Delay-------\n \n \n")

@@ -75,7 +75,7 @@ def sgp_call(link, driver):
 def non_sgp_call(link, driver):
     non_sgp_dict = {}
     try:
-        link= link.replace("sgpmode=true", "category=odds&subcategory=game-lines")
+        link = link.replace("sgpmode=true", "category=odds&subcategory=game-lines")
         driver.get(link)
         driver.implicitly_wait(10)
         player_names = driver.find_elements(By.CLASS_NAME, "event-cell__name-text")
